@@ -42,6 +42,15 @@ class Station:
     expected: str
 
 
+def marker_xy(marker_id: int) -> tuple[float, float]:
+    # В выданном мире маркер 8 имеет координаты (1, 5), маркер 33 - (5, 2).
+    return float(marker_id % 7), float(6 - marker_id // 7)
+
+
+def shifted_xy(x: float, y: float, start_x: float, start_y: float) -> tuple[float, float]:
+    return x - start_x, y - start_y
+
+
 def configure_output_encoding() -> None:
     # В VM иногда бывает не UTF-8 locale; вывод миссии оставляем ASCII.
     for stream in (sys.stdout, sys.stderr):
@@ -126,6 +135,7 @@ class EnergyRelayMission:
         frame_id: str = "body",
         auto_arm: bool = False,
     ) -> None:
+        start = self.safe_telemetry(self.args.frame_id)
         response = self.navigate(
             x=x,
             y=y,
@@ -138,11 +148,22 @@ class EnergyRelayMission:
         if not response.success:
             raise RuntimeError(response.message)
 
+        if self.args.open_loop_wait:
+            self.sleep_for_motion(start, x, y, z, frame_id)
+            return
+
         # Ждём фактического прихода в цель, а не фиксированную задержку.
         deadline = time.time() + self.args.navigate_timeout
         rate = rospy.Rate(5)
         while not rospy.is_shutdown():
-            telem = self.get_telemetry(frame_id="navigate_target")
+            try:
+                telem = self.get_telemetry(frame_id="navigate_target")
+            except Exception as exc:
+                rospy.logwarn("Telemetry failed during navigation: %s", exc)
+                if self.args.continue_on_service_error:
+                    self.sleep_for_motion(start, x, y, z, frame_id)
+                    return
+                raise
             distance = math.sqrt(telem.x**2 + telem.y**2 + telem.z**2)
             if distance < self.args.tolerance:
                 return
@@ -152,11 +173,42 @@ class EnergyRelayMission:
                 )
             rate.sleep()
 
+    def safe_telemetry(self, frame_id: str):
+        try:
+            return self.get_telemetry(frame_id=frame_id)
+        except Exception:
+            return None
+
+    def sleep_for_motion(self, start, x: float, y: float, z: float, frame_id: str) -> None:
+        # Fallback для нестабильной VM: даём navigate время долететь без опроса сервисов.
+        if frame_id == "body" or start is None:
+            distance = math.sqrt(x**2 + y**2 + z**2)
+        else:
+            distance = math.sqrt((x - start.x) ** 2 + (y - start.y) ** 2 + (z - start.z) ** 2)
+        wait_time = min(self.args.navigate_timeout, max(3.0, distance / max(self.args.speed, 0.05) + 2.0))
+        rospy.loginfo("Open-loop wait %.1f s", wait_time)
+        rospy.sleep(wait_time)
+
     def land_wait(self) -> None:
-        self.land()
+        try:
+            self.land()
+        except Exception as exc:
+            rospy.logwarn("Land service failed: %s", exc)
+            return
         rate = rospy.Rate(5)
-        while not rospy.is_shutdown() and self.get_telemetry().armed:
+        while not rospy.is_shutdown():
+            try:
+                if not self.get_telemetry().armed:
+                    return
+            except Exception as exc:
+                rospy.logwarn("Telemetry failed while landing: %s", exc)
+                return
             rate.sleep()
+
+    def navigate_path(self, points: list[tuple[float, float]], z: float) -> None:
+        for x, y in points:
+            rospy.loginfo("Navigate segment: x=%.2f y=%.2f z=%.2f", x, y, z)
+            self.navigate_wait(x=x, y=y, z=z, frame_id=self.args.frame_id)
 
     def classify_station_color(self, frame: np.ndarray, fallback: str) -> tuple[str, int, int]:
         # Берём центральную часть кадра: станция находится прямо под коптером.
@@ -217,13 +269,22 @@ class EnergyRelayMission:
         rospy.wait_for_service("land")
         self.camera.wait(timeout=10.0)
 
+        start_x, start_y = self.resolve_start_xy()
+        red_x, red_y = shifted_xy(self.args.red_x, self.args.red_y, start_x, start_y)
+        green_x, green_y = shifted_xy(self.args.green_x, self.args.green_y, start_x, start_y)
+        mid1_x, mid1_y = shifted_xy(self.args.mid1_x, self.args.mid1_y, start_x, start_y)
+        mid2_x, mid2_y = shifted_xy(self.args.mid2_x, self.args.mid2_y, start_x, start_y)
+
         stations = [
-            Station("red_station", 8, self.args.red_x, self.args.red_y, "red"),
-            Station("green_station", 33, self.args.green_x, self.args.green_y, "green"),
+            Station("red_station", 8, red_x, red_y, "red"),
+            Station("green_station", 33, green_x, green_y, "green"),
         ]
 
         print("Mission started")
         print(f"Frame: {self.args.frame_id}")
+        print(f"Start field offset: x={start_x:.2f}, y={start_y:.2f}")
+        print(f"Red target: x={red_x:.2f}, y={red_y:.2f}")
+        print(f"Green target: x={green_x:.2f}, y={green_y:.2f}")
         print("Route: marker 8 -> marker 33 -> land on green")
 
         self.set_led_fill("blue")
@@ -231,28 +292,28 @@ class EnergyRelayMission:
 
         detected: dict[str, str] = {}
         try:
-            for station in stations:
-                self.set_led_rainbow()
-                rospy.loginfo(
-                    "Navigate to marker %d (%s): x=%.2f y=%.2f",
-                    station.marker_id,
-                    station.name,
-                    station.x,
-                    station.y,
-                )
-                self.navigate_wait(
-                    x=station.x,
-                    y=station.y,
-                    z=self.args.altitude,
-                    frame_id=self.args.frame_id,
-                )
-                detected[station.name] = self.inspect_station(station)
+            self.set_led_rainbow()
+            self.navigate_path([(red_x, red_y)], self.args.altitude)
+            detected[stations[0].name] = self.inspect_station(stations[0])
+
+            self.set_led_rainbow()
+            # До зелёной станции идём несколькими короткими отрезками: так ArUco-навигация
+            # в VM реже уходит в failsafe на длинном перелёте.
+            self.navigate_path(
+                [
+                    (mid1_x, mid1_y),
+                    (mid2_x, mid2_y),
+                    (green_x, green_y),
+                ],
+                self.args.altitude,
+            )
+            detected[stations[1].name] = self.inspect_station(stations[1])
 
             self.set_led_fill("green")
             rospy.loginfo("Landing on green station")
             self.navigate_wait(
-                x=self.args.green_x,
-                y=self.args.green_y,
+                x=green_x,
+                y=green_y,
                 z=self.args.landing_altitude,
                 frame_id=self.args.frame_id,
             )
@@ -265,15 +326,20 @@ class EnergyRelayMission:
         print(f"red_station={detected.get('red_station', 'unknown')}")
         print(f"green_station={detected.get('green_station', 'unknown')}")
 
+    def resolve_start_xy(self) -> tuple[float, float]:
+        if self.args.start_marker >= 0:
+            return marker_xy(self.args.start_marker)
+        return self.args.start_x, self.args.start_y
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image-topic", default="/main_camera/image_raw")
     parser.add_argument("--frame-id", default="map")
     parser.add_argument("--takeoff-altitude", type=float, default=1.0)
-    parser.add_argument("--altitude", type=float, default=1.6)
+    parser.add_argument("--altitude", type=float, default=1.15)
     parser.add_argument("--landing-altitude", type=float, default=1.0)
-    parser.add_argument("--speed", type=float, default=0.35)
+    parser.add_argument("--speed", type=float, default=0.25)
     parser.add_argument("--tolerance", type=float, default=0.25)
     parser.add_argument("--navigate-timeout", type=float, default=45.0)
     parser.add_argument("--settle-time", type=float, default=1.0)
@@ -282,8 +348,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-color-pixels", type=int, default=200)
     parser.add_argument("--red-x", type=float, default=1.0)
     parser.add_argument("--red-y", type=float, default=5.0)
+    parser.add_argument("--mid1-x", type=float, default=2.5)
+    parser.add_argument("--mid1-y", type=float, default=4.2)
+    parser.add_argument("--mid2-x", type=float, default=4.0)
+    parser.add_argument("--mid2-y", type=float, default=3.1)
     parser.add_argument("--green-x", type=float, default=5.0)
     parser.add_argument("--green-y", type=float, default=2.0)
+    parser.add_argument("--start-marker", type=int, default=-1, help="If map origin is the takeoff marker, pass its ArUco id, e.g. 8.")
+    parser.add_argument("--start-x", type=float, default=0.0, help="Field x of the takeoff point when using local map coordinates.")
+    parser.add_argument("--start-y", type=float, default=0.0, help="Field y of the takeoff point when using local map coordinates.")
+    parser.add_argument("--open-loop-wait", action="store_true", help="Do not poll navigate_target; sleep after each navigate command.")
+    parser.add_argument("--continue-on-service-error", action="store_true", default=True, help="Avoid traceback if Clover services reset in the VM.")
     parser.add_argument("--skip-land", action="store_true")
     return parser.parse_args()
 
