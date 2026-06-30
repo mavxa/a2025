@@ -114,9 +114,20 @@ class EnergyRelayMission:
             return
         r, g, b = LED.get(color, LED["white"])
         try:
-            self.set_effect(effect="fill", r=r, g=g, b=b)
+            # В старых образах Clover надёжнее работает вызов без явного effect.
+            self.set_effect(r=r, g=g, b=b)
         except Exception as exc:
-            rospy.logwarn("Failed to set LED fill %s: %s", color, exc)
+            try:
+                self.set_effect(effect="fill", r=r, g=g, b=b)
+            except Exception:
+                rospy.logwarn("Failed to set LED fill %s: %s", color, exc)
+
+    def show_detected_color(self, color: str, duration: float = 2.0) -> None:
+        # Несколько повторов помогают, если первый вызов LED-сервиса потерялся в VM.
+        deadline = time.time() + duration
+        while not rospy.is_shutdown() and time.time() < deadline:
+            self.set_led_fill(color)
+            rospy.sleep(0.25)
 
     def set_led_rainbow(self) -> None:
         if self.set_effect is None:
@@ -252,8 +263,8 @@ class EnergyRelayMission:
             rospy.sleep(self.args.process_interval)
 
         color = max(votes, key=votes.get) if any(votes.values()) else station.expected
-        self.set_led_fill(color)
         print(color)
+        self.show_detected_color(color, self.args.color_led_time)
         rospy.loginfo(
             "Station marker %d: detected=%s red_pixels=%d green_pixels=%d",
             station.marker_id,
@@ -269,9 +280,15 @@ class EnergyRelayMission:
         rospy.wait_for_service("land")
         self.camera.wait(timeout=10.0)
 
+        if self.args.aruco_frames:
+            self.run_aruco_frames()
+            return
+
         start_x, start_y = self.resolve_start_xy()
         red_x, red_y = shifted_xy(self.args.red_x, self.args.red_y, start_x, start_y)
         green_x, green_y = shifted_xy(self.args.green_x, self.args.green_y, start_x, start_y)
+        land_x = green_x + self.args.land_x_offset
+        land_y = green_y + self.args.land_y_offset
         mid1_x, mid1_y = shifted_xy(self.args.mid1_x, self.args.mid1_y, start_x, start_y)
         mid2_x, mid2_y = shifted_xy(self.args.mid2_x, self.args.mid2_y, start_x, start_y)
 
@@ -285,6 +302,7 @@ class EnergyRelayMission:
         print(f"Start field offset: x={start_x:.2f}, y={start_y:.2f}")
         print(f"Red target: x={red_x:.2f}, y={red_y:.2f}")
         print(f"Green target: x={green_x:.2f}, y={green_y:.2f}")
+        print(f"Landing target: x={land_x:.2f}, y={land_y:.2f}")
         print("Route: marker 8 -> marker 33 -> land on green")
 
         self.set_led_fill("blue")
@@ -312,11 +330,46 @@ class EnergyRelayMission:
             self.set_led_fill("green")
             rospy.loginfo("Landing on green station")
             self.navigate_wait(
-                x=green_x,
-                y=green_y,
+                x=land_x,
+                y=land_y,
                 z=self.args.landing_altitude,
                 frame_id=self.args.frame_id,
             )
+        finally:
+            if not self.args.skip_land and not rospy.is_shutdown():
+                self.set_led_fill("green")
+                self.land_wait()
+
+        print("Mission finished")
+        print(f"red_station={detected.get('red_station', 'unknown')}")
+        print(f"green_station={detected.get('green_station', 'unknown')}")
+
+    def run_aruco_frames(self) -> None:
+        print("Mission started")
+        print("Frame mode: aruco_8 -> aruco_33")
+        print("Route: takeoff -> aruco_8 -> aruco_33 -> land")
+
+        self.set_led_fill("blue")
+        self.navigate_wait(z=self.args.takeoff_altitude, frame_id="body", auto_arm=True)
+
+        detected: dict[str, str] = {}
+        try:
+            self.set_led_rainbow()
+            rospy.loginfo("Navigate to aruco_8")
+            self.navigate_wait(x=0.0, y=0.0, z=self.args.altitude, frame_id="aruco_8")
+            detected["red_station"] = self.inspect_station(
+                Station("red_station", 8, 0.0, 0.0, "red")
+            )
+
+            self.set_led_rainbow()
+            rospy.loginfo("Navigate to aruco_33")
+            self.navigate_wait(x=0.0, y=0.0, z=self.args.altitude, frame_id="aruco_33")
+            detected["green_station"] = self.inspect_station(
+                Station("green_station", 33, 0.0, 0.0, "green")
+            )
+
+            self.set_led_fill("green")
+            rospy.loginfo("Landing on green station")
         finally:
             if not self.args.skip_land and not rospy.is_shutdown():
                 self.set_led_fill("green")
@@ -335,6 +388,7 @@ class EnergyRelayMission:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image-topic", default="/main_camera/image_raw")
+    parser.add_argument("--aruco-frames", action="store_true", help="Navigate directly to frame_id aruco_8 and aruco_33, like the previous-year solution.")
     parser.add_argument("--frame-id", default="map")
     parser.add_argument("--takeoff-altitude", type=float, default=1.0)
     parser.add_argument("--altitude", type=float, default=1.15)
@@ -344,6 +398,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--navigate-timeout", type=float, default=45.0)
     parser.add_argument("--settle-time", type=float, default=1.0)
     parser.add_argument("--inspect-time", type=float, default=2.5)
+    parser.add_argument("--color-led-time", type=float, default=2.0)
     parser.add_argument("--process-interval", type=float, default=0.25)
     parser.add_argument("--min-color-pixels", type=int, default=200)
     parser.add_argument("--red-x", type=float, default=1.0)
@@ -354,6 +409,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mid2-y", type=float, default=3.1)
     parser.add_argument("--green-x", type=float, default=5.0)
     parser.add_argument("--green-y", type=float, default=2.0)
+    parser.add_argument("--land-x-offset", type=float, default=-0.35, help="Landing correction in map x; negative moves left on the field.")
+    parser.add_argument("--land-y-offset", type=float, default=0.35, help="Landing correction in map y; positive moves up on the field.")
     parser.add_argument("--start-marker", type=int, default=-1, help="If map origin is the takeoff marker, pass its ArUco id, e.g. 8.")
     parser.add_argument("--start-x", type=float, default=0.0, help="Field x of the takeoff point when using local map coordinates.")
     parser.add_argument("--start-y", type=float, default=0.0, help="Field y of the takeoff point when using local map coordinates.")
