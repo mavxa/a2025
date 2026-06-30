@@ -285,12 +285,19 @@ class EnergyRelayMission:
             return
 
         start_x, start_y = self.resolve_start_xy()
-        red_x, red_y = shifted_xy(self.args.red_x, self.args.red_y, start_x, start_y)
-        green_x, green_y = shifted_xy(self.args.green_x, self.args.green_y, start_x, start_y)
+        if self.args.absolute_map:
+            red_x, red_y = self.args.red_x, self.args.red_y
+            green_x, green_y = self.args.green_x, self.args.green_y
+            mid1_x, mid1_y = self.args.mid1_x, self.args.mid1_y
+            mid2_x, mid2_y = self.args.mid2_x, self.args.mid2_y
+        else:
+            red_x, red_y = shifted_xy(self.args.red_x, self.args.red_y, start_x, start_y)
+            green_x, green_y = shifted_xy(self.args.green_x, self.args.green_y, start_x, start_y)
+            mid1_x, mid1_y = shifted_xy(self.args.mid1_x, self.args.mid1_y, start_x, start_y)
+            mid2_x, mid2_y = shifted_xy(self.args.mid2_x, self.args.mid2_y, start_x, start_y)
+
         land_x = green_x + self.args.land_x_offset
         land_y = green_y + self.args.land_y_offset
-        mid1_x, mid1_y = shifted_xy(self.args.mid1_x, self.args.mid1_y, start_x, start_y)
-        mid2_x, mid2_y = shifted_xy(self.args.mid2_x, self.args.mid2_y, start_x, start_y)
 
         stations = [
             Station("red_station", 8, red_x, red_y, "red"),
@@ -299,6 +306,7 @@ class EnergyRelayMission:
 
         print("Mission started")
         print(f"Frame: {self.args.frame_id}")
+        print(f"Map mode: {'absolute' if self.args.absolute_map else 'relative_to_start'}")
         print(f"Start field offset: x={start_x:.2f}, y={start_y:.2f}")
         print(f"Red target: x={red_x:.2f}, y={red_y:.2f}")
         print(f"Green target: x={green_x:.2f}, y={green_y:.2f}")
@@ -389,6 +397,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image-topic", default="/main_camera/image_raw")
     parser.add_argument("--aruco-frames", action="store_true", help="Navigate directly to frame_id aruco_8 and aruco_33, like the previous-year solution.")
+    parser.add_argument("--absolute-map", action="store_true", help="Use station coordinates as absolute map coordinates, without subtracting start marker.")
     parser.add_argument("--frame-id", default="map")
     parser.add_argument("--takeoff-altitude", type=float, default=1.0)
     parser.add_argument("--altitude", type=float, default=1.15)
