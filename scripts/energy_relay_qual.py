@@ -280,6 +280,10 @@ class EnergyRelayMission:
         rospy.wait_for_service("land")
         self.camera.wait(timeout=10.0)
 
+        if self.args.offset_route:
+            self.run_offset_route()
+            return
+
         if self.args.aruco_frames:
             self.run_aruco_frames()
             return
@@ -351,6 +355,62 @@ class EnergyRelayMission:
         print(f"red_station={detected.get('red_station', 'unknown')}")
         print(f"green_station={detected.get('green_station', 'unknown')}")
 
+    def run_offset_route(self) -> None:
+        print("Mission started")
+        print("Route mode: body offsets")
+        print(
+            f"Start -> red offset: x={self.args.red_dx:.2f}, y={self.args.red_dy:.2f}"
+        )
+        print(
+            f"Red -> green offset: x={self.args.green_dx:.2f}, y={self.args.green_dy:.2f}"
+        )
+
+        self.set_led_fill("blue")
+        self.navigate_wait(z=self.args.takeoff_altitude, frame_id="body", auto_arm=True)
+
+        detected: dict[str, str] = {}
+        try:
+            self.set_led_rainbow()
+            rospy.loginfo("Offset flight to red station")
+            self.navigate_wait(
+                x=self.args.red_dx,
+                y=self.args.red_dy,
+                z=0.0,
+                frame_id="body",
+            )
+            detected["red_station"] = self.inspect_station(
+                Station("red_station", 8, 0.0, 0.0, "red")
+            )
+
+            self.set_led_rainbow()
+            rospy.loginfo("Offset flight to green station")
+            self.navigate_wait(
+                x=self.args.green_dx,
+                y=self.args.green_dy,
+                z=0.0,
+                frame_id="body",
+            )
+            detected["green_station"] = self.inspect_station(
+                Station("green_station", 33, 0.0, 0.0, "green")
+            )
+
+            if abs(self.args.land_dx) > 1e-6 or abs(self.args.land_dy) > 1e-6:
+                rospy.loginfo("Landing correction offset")
+                self.navigate_wait(
+                    x=self.args.land_dx,
+                    y=self.args.land_dy,
+                    z=0.0,
+                    frame_id="body",
+                )
+        finally:
+            if not self.args.skip_land and not rospy.is_shutdown():
+                self.set_led_fill("green")
+                self.land_wait()
+
+        print("Mission finished")
+        print(f"red_station={detected.get('red_station', 'unknown')}")
+        print(f"green_station={detected.get('green_station', 'unknown')}")
+
     def run_aruco_frames(self) -> None:
         print("Mission started")
         print("Frame mode: aruco_8 -> aruco_33")
@@ -395,6 +455,7 @@ class EnergyRelayMission:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image-topic", default="/main_camera/image_raw")
+    parser.add_argument("--offset-route", action="store_true", help="Fly using body-frame offsets instead of map/aruco frames.")
     parser.add_argument("--aruco-frames", action="store_true", help="Navigate directly to frame_id aruco_8 and aruco_33, like the previous-year solution.")
     parser.add_argument("--relative-to-start", action="store_true", help="Subtract --start-marker/--start-x/--start-y from station coordinates.")
     parser.add_argument("--frame-id", default="map")
@@ -419,6 +480,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--green-y", type=float, default=2.0)
     parser.add_argument("--land-x-offset", type=float, default=-0.35, help="Landing correction in map x; negative moves left on the field.")
     parser.add_argument("--land-y-offset", type=float, default=0.35, help="Landing correction in map y; positive moves up on the field.")
+    parser.add_argument("--red-dx", type=float, default=1.0, help="Body-frame offset from takeoff point to red station.")
+    parser.add_argument("--red-dy", type=float, default=5.0, help="Body-frame offset from takeoff point to red station.")
+    parser.add_argument("--green-dx", type=float, default=4.0, help="Body-frame offset from red station to green station.")
+    parser.add_argument("--green-dy", type=float, default=-3.0, help="Body-frame offset from red station to green station.")
+    parser.add_argument("--land-dx", type=float, default=-0.35, help="Body-frame correction before landing on green.")
+    parser.add_argument("--land-dy", type=float, default=0.35, help="Body-frame correction before landing on green.")
     parser.add_argument("--start-marker", type=int, default=-1, help="If map origin is the takeoff marker, pass its ArUco id, e.g. 8.")
     parser.add_argument("--start-x", type=float, default=0.0, help="Field x of the takeoff point when using local map coordinates.")
     parser.add_argument("--start-y", type=float, default=0.0, help="Field y of the takeoff point when using local map coordinates.")
