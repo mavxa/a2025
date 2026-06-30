@@ -285,7 +285,7 @@ class EnergyRelayMission:
             return
 
         start_x, start_y = self.resolve_start_xy()
-        if self.args.absolute_map:
+        if not self.args.relative_to_start:
             red_x, red_y = self.args.red_x, self.args.red_y
             green_x, green_y = self.args.green_x, self.args.green_y
             mid1_x, mid1_y = self.args.mid1_x, self.args.mid1_y
@@ -306,7 +306,7 @@ class EnergyRelayMission:
 
         print("Mission started")
         print(f"Frame: {self.args.frame_id}")
-        print(f"Map mode: {'absolute' if self.args.absolute_map else 'relative_to_start'}")
+        print(f"Map mode: {'relative_to_start' if self.args.relative_to_start else 'absolute'}")
         print(f"Start field offset: x={start_x:.2f}, y={start_y:.2f}")
         print(f"Red target: x={red_x:.2f}, y={red_y:.2f}")
         print(f"Green target: x={green_x:.2f}, y={green_y:.2f}")
@@ -323,8 +323,7 @@ class EnergyRelayMission:
             detected[stations[0].name] = self.inspect_station(stations[0])
 
             self.set_led_rainbow()
-            # До зелёной станции идём несколькими короткими отрезками: так ArUco-навигация
-            # в VM реже уходит в failsafe на длинном перелёте.
+            # До зелёной станции идём короткими отрезками: так VM реже уходит в failsafe.
             self.navigate_path(
                 [
                     (mid1_x, mid1_y),
@@ -397,12 +396,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image-topic", default="/main_camera/image_raw")
     parser.add_argument("--aruco-frames", action="store_true", help="Navigate directly to frame_id aruco_8 and aruco_33, like the previous-year solution.")
-    parser.add_argument("--absolute-map", action="store_true", help="Use station coordinates as absolute map coordinates, without subtracting start marker.")
+    parser.add_argument("--relative-to-start", action="store_true", help="Subtract --start-marker/--start-x/--start-y from station coordinates.")
     parser.add_argument("--frame-id", default="map")
     parser.add_argument("--takeoff-altitude", type=float, default=1.0)
-    parser.add_argument("--altitude", type=float, default=1.15)
+    parser.add_argument("--altitude", type=float, default=1.6)
     parser.add_argument("--landing-altitude", type=float, default=1.0)
-    parser.add_argument("--speed", type=float, default=0.25)
+    parser.add_argument("--speed", type=float, default=0.35)
     parser.add_argument("--tolerance", type=float, default=0.25)
     parser.add_argument("--navigate-timeout", type=float, default=45.0)
     parser.add_argument("--settle-time", type=float, default=1.0)
