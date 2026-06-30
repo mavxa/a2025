@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+*.mp4
+*.avi
+*.mkv
+*.mov
