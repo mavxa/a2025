@@ -14,9 +14,10 @@
 ## Файлы
 
 ```text
-world/                          распакованный Gazebo world и модели
-scripts/energy_relay_qual.py    автономная миссия
-scripts/install_world.sh        добавление станций в штатный Clover world
+world/                          распакованный Gazebo world, модели и карта 7x7
+world/resources/maps/a2025_aruco_7x7.txt карта ArUco 7x7 для Clover
+scripts/main.py                 автономная миссия
+scripts/install_world.sh        установка мира, моделей и карты 7x7
 scripts/restore_world.sh        откат стандартного clover_aruco.world
 ```
 
@@ -24,7 +25,7 @@ scripts/restore_world.sh        откат стандартного clover_aruco
 
 Папка мира должна называться `world/`. Кириллическое имя `Мир/` лучше не использовать: в shell/VM оно легко ломает пути.
 
-Установить модели станций и добавить их в штатный `clover_aruco.world`:
+Установить мир, модели и карту ArUco `7x7`:
 
 ```bash
 source /opt/ros/noetic/setup.bash
@@ -32,12 +33,14 @@ source ~/catkin_ws/devel/setup.bash 2>/dev/null || source ~/catkin_ws/install/se
 scripts/install_world.sh
 ```
 
-Важно: ArUco-карту `cmit.txt` и штатную модель `aruco_cmit_txt` не меняем. В этом образе используется стандартная CMIT-карта `10x10`, и навигацию выполняем в её `aruco_map`-frame. Скрипт добавляет только две станции: красная на marker `8` `(8, 9)`, зелёная на marker `33` `(3, 6)`.
+Важно: задание использует поле ArUco `7x7` с маркерами `0..48`. Скрипт ставит одинаковую карту `7x7` в `~/catkin_ws/src/clover/aruco_pose/map/map.txt` и `cmit.txt`, чтобы `aruco_map` совпадал с выданным миром.
 
 Скрипт создаёт backup стандартного мира:
 
 ```text
 clover_aruco.world.before_a2025.bak
+map.txt.before_a2025.bak
+cmit.txt.before_a2025.bak
 ```
 
 Откатить мир после записи видео:
@@ -70,7 +73,7 @@ rosservice list | grep -E 'navigate|get_telemetry|land|led/set_effect'
 cd ~/zed/a2025
 source /opt/ros/noetic/setup.bash
 source ~/catkin_ws/devel/setup.bash 2>/dev/null || source ~/catkin_ws/install/setup.bash
-python3 scripts/energy_relay_qual.py
+python3 scripts/main.py
 ```
 
 Ожидаемый вывод в терминале:
@@ -89,7 +92,7 @@ green_station=green
 ## Что Снимать На Видео
 
 - Окно Gazebo с миром, красной и зелёной станцией.
-- Терминал с запуском `energy_relay_qual.py`.
+- Терминал с запуском `main.py`.
 - Взлёт с синей LED-индикацией.
 - Полёт мониторинга с `rainbow`.
 - Вывод `red` и `green` в терминал.
@@ -100,9 +103,9 @@ green_station=green
 
 ## Настройки
 
-Координаты станций соответствуют активной CMIT-карте `10x10`:
+Координаты станций соответствуют карте ArUco `7x7`:
 
 ```text
-red marker 8:     x=8.0 y=9.0
-green marker 33:  x=3.0 y=6.0
+red marker 8:     x=1.0 y=5.0
+green marker 33:  x=5.0 y=2.0
 ```

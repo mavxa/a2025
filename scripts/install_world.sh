@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORLD_DIR="$PROJECT_ROOT/world"
+MAP_SOURCE="$WORLD_DIR/resources/maps/a2025_aruco_7x7.txt"
 
 find_clover_simulation() {
   if command -v rospack >/dev/null 2>&1; then
@@ -26,17 +27,15 @@ find_clover_simulation() {
   return 1
 }
 
-if [[ ! -d "$WORLD_DIR/models" ]]; then
-  echo "Extracted world not found: $WORLD_DIR" >&2
-  echo "Expected directory: $PROJECT_ROOT/world" >&2
+if [[ ! -d "$WORLD_DIR/models" || ! -f "$WORLD_DIR/resources/worlds/clover_aruco.world" || ! -f "$MAP_SOURCE" ]]; then
+  echo "A2025 world files not found under: $WORLD_DIR" >&2
   exit 1
 fi
 
 mkdir -p "$HOME/.gazebo/models"
 
-# Делаем доступными только модели станций. ArUco/parquet из архива не ставим:
-# они могут не совпадать со штатной CMIT-картой 10x10 из образа Clover.
-for model_name in red green; do
+# Для A2025 ставим именно модели из архива: поле ArUco 7x7 и станции.
+for model_name in aruco_cmit_txt parquet_plane red green; do
   model_dir="$WORLD_DIR/models/$model_name"
   [[ -d "$model_dir" && -f "$model_dir/model.config" ]] || continue
   target="$HOME/.gazebo/models/$model_name"
@@ -50,24 +49,16 @@ for model_name in red green; do
   ln -s "$model_dir" "$target"
 done
 
-# Если раньше этим скриптом был поставлен неправильный aruco_cmit_txt из архива,
-# убираем symlink, чтобы Gazebo снова использовал штатную модель 10x10 из образа.
-for model_name in aruco_cmit_txt parquet_plane; do
-  target="$HOME/.gazebo/models/$model_name"
-  if [[ -L "$target" ]]; then
-    link_target="$(readlink "$target")"
-    case "$link_target" in
-      "$WORLD_DIR"/*)
-        rm "$target"
-        echo "Removed archive model symlink: $target -> $link_target"
-        ;;
-    esac
-  fi
-done
+# Убираем модель прошлого solar-задания, если она осталась в пользовательских моделях.
+solar_model="$HOME/.gazebo/models/solar_panel"
+if [[ -L "$solar_model" ]]; then
+  rm "$solar_model"
+  echo "Removed old solar_panel symlink: $solar_model"
+fi
 
 CLOVER_SIMULATION_PATH="$(find_clover_simulation || true)"
 if [[ -z "$CLOVER_SIMULATION_PATH" ]]; then
-  echo "clover_simulation package not found; models were installed only." >&2
+  echo "clover_simulation package not found; Gazebo models were installed only." >&2
   exit 0
 fi
 
@@ -77,75 +68,25 @@ if [[ -f "$target_world" && ! -f "$backup_world" ]]; then
   cp "$target_world" "$backup_world"
   echo "Backup created: $backup_world"
 fi
+cp "$WORLD_DIR/resources/worlds/clover_aruco.world" "$target_world"
 
-if [[ -f "$backup_world" ]]; then
-  cp "$backup_world" "$target_world"
+MAP_DIR="$HOME/catkin_ws/src/clover/aruco_pose/map"
+if [[ ! -d "$MAP_DIR" ]]; then
+  echo "Aruco map directory not found: $MAP_DIR" >&2
+  echo "World/models were installed, but map files were not copied." >&2
+  exit 0
 fi
 
-python3 - "$target_world" <<'PY'
-from pathlib import Path
-import re
-import sys
+for map_name in map.txt cmit.txt; do
+  target_map="$MAP_DIR/$map_name"
+  backup_map="$target_map.before_a2025.bak"
+  if [[ -f "$target_map" && ! -f "$backup_map" ]]; then
+    cp "$target_map" "$backup_map"
+    echo "Backup created: $backup_map"
+  fi
+  cp "$MAP_SOURCE" "$target_map"
+done
 
-path = Path(sys.argv[1])
-content = path.read_text(encoding="utf-8")
-
-# Убираем мусор от предыдущих запусков A2025.
-start = "    <!-- A2025 stations start -->"
-end = "    <!-- A2025 stations end -->"
-while start in content and end in content:
-    before, rest = content.split(start, 1)
-    _, after = rest.split(end, 1)
-    content = before + after
-
-# Убираем мир прошлого задания Solar Farm, если backup уже был сделан поверх него.
-content = re.sub(
-    r"\s*<!-- Generated solar farm inspection objects\. -->.*?<!-- End generated solar farm inspection objects\. -->\s*",
-    "\n",
-    content,
-    flags=re.S,
-)
-
-# Дополнительная страховка: удаляем отдельные include/model-блоки solar_panel_*.
-content = re.sub(
-    r"\s*<include>\s*(?:(?!</include>).)*?(?:solar_panel|contamination|indicator)(?:(?!</include>).)*?</include>\s*",
-    "\n",
-    content,
-    flags=re.S,
-)
-content = re.sub(
-    r"\s*<model\s+name=\"(?:solar_panel|.*contamination.*|.*indicator.*).*?</model>\s*",
-    "\n",
-    content,
-    flags=re.S,
-)
-
-block = f"""
-{start}
-    <include>
-      <uri>model://red</uri>
-      <name>a2025_red_station</name>
-      <pose>8 9 0 0 0 0</pose>
-    </include>
-    <include>
-      <uri>model://green</uri>
-      <name>a2025_green_station</name>
-      <pose>3 6 0 0 0 0</pose>
-    </include>
-{end}
-"""
-marker = "</world>"
-if marker not in content:
-    raise SystemExit(f"Cannot find {marker} in {path}")
-content = content.replace(marker, block + "  " + marker, 1)
-path.write_text(content, encoding="utf-8")
-PY
-
-echo "Installed A2025 stations into existing Clover 10x10 world: $target_world"
-echo "Gazebo models installed into: $HOME/.gazebo/models"
-
-solar_model="$HOME/.gazebo/models/solar_panel"
-if [[ -L "$solar_model" ]]; then
-  rm "$solar_model"
-  echo "Removed old solar_panel symlink: $solar_model"
-fi
+echo "Installed A2025 7x7 world: $target_world"
+echo "Installed A2025 7x7 ArUco maps: $MAP_DIR/map.txt and $MAP_DIR/cmit.txt"
+echo "Restart Gazebo/Clover after this."

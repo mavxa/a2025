@@ -38,6 +38,16 @@ fi
 cp "$backup_world" "$target_world"
 echo "Restored Clover world: $target_world"
 
+MAP_DIR="$HOME/catkin_ws/src/clover/aruco_pose/map"
+for map_name in map.txt cmit.txt; do
+  target_map="$MAP_DIR/$map_name"
+  backup_map="$target_map.before_a2025.bak"
+  if [[ -f "$backup_map" ]]; then
+    cp "$backup_map" "$target_map"
+    echo "Restored ArUco map: $target_map"
+  fi
+done
+
 for model_name in red green aruco_cmit_txt parquet_plane; do
   target="$HOME/.gazebo/models/$model_name"
   if [[ -L "$target" ]]; then

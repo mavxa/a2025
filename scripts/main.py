@@ -26,8 +26,11 @@ TOLERANCE = 0.25
 NAVIGATION_TIMEOUT = 60.0
 INSPECTION_TIME = 2.5
 
-RED_STATION = (8.0, 9.0)
-GREEN_STATION = (3.0, 6.0)
+# Coordinates from the A2025 7x7 ArUco map:
+# marker 8  -> x=1, y=5
+# marker 33 -> x=5, y=2
+RED_STATION = (1.0, 5.0)
+GREEN_STATION = (5.0, 2.0)
 
 
 @dataclass
@@ -228,7 +231,7 @@ class Mission:
 
 def main() -> None:
     configure_output_encoding()
-    rospy.init_node("energy_relay_qualifier")
+    rospy.init_node("a2025_energy_relay")
     Mission().run()
 
 
