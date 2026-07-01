@@ -16,7 +16,7 @@
 ```text
 world/                          распакованный Gazebo world и модели
 scripts/energy_relay_qual.py    автономная миссия
-scripts/install_world.sh        установка мира и моделей в Clover VM
+scripts/install_world.sh        добавление станций в штатный Clover world
 scripts/restore_world.sh        откат стандартного clover_aruco.world
 ```
 
@@ -24,7 +24,7 @@ scripts/restore_world.sh        откат стандартного clover_aruco
 
 Папка мира должна называться `world/`. Кириллическое имя `Мир/` лучше не использовать: в shell/VM оно легко ломает пути.
 
-Установить модели и заменить `clover_aruco.world` в Clover VM:
+Установить модели станций и добавить их в штатный `clover_aruco.world`:
 
 ```bash
 source /opt/ros/noetic/setup.bash
@@ -32,7 +32,7 @@ source ~/catkin_ws/devel/setup.bash 2>/dev/null || source ~/catkin_ws/install/se
 scripts/install_world.sh
 ```
 
-Важно: ArUco-карту `cmit.txt` не меняем. В этом образе используется стандартная CMIT-карта `10x10`, и навигацию выполняем в её `map`-frame. Координаты целей берутся по позициям цветных моделек в world: красная `(1, 5)`, зелёная `(5, 2)`.
+Важно: ArUco-карту `cmit.txt` и штатную модель `aruco_cmit_txt` не меняем. В этом образе используется стандартная CMIT-карта `10x10`, и навигацию выполняем в её `map`-frame. Скрипт добавляет только две станции: красная `(1, 5)`, зелёная `(5, 2)`.
 
 Скрипт создаёт backup стандартного мира:
 

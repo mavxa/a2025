@@ -37,3 +37,16 @@ fi
 
 cp "$backup_world" "$target_world"
 echo "Restored Clover world: $target_world"
+
+for model_name in red green aruco_cmit_txt parquet_plane; do
+  target="$HOME/.gazebo/models/$model_name"
+  if [[ -L "$target" ]]; then
+    link_target="$(readlink "$target")"
+    case "$link_target" in
+      *"/a2025/world/models/"*)
+        rm "$target"
+        echo "Removed A2025 model symlink: $target -> $link_target"
+        ;;
+    esac
+  fi
+done
