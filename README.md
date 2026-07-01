@@ -19,6 +19,8 @@
 scripts/energy_relay_qual.py    автономная миссия
 scripts/install_world.sh        установка мира и моделей в Clover VM
 scripts/restore_world.sh        откат стандартного clover_aruco.world
+scripts/install_aruco_map_7x7.sh установка правильной ArUco-карты 7x7
+scripts/restore_aruco_map.sh    откат старой ArUco-карты
 ```
 
 ## Подготовка Мира
@@ -37,6 +39,28 @@ source ~/catkin_ws/devel/setup.bash 2>/dev/null || source ~/catkin_ws/install/se
 scripts/install_world.sh
 ```
 
+Важно: в некоторых образах Clover активна карта ArUco `10x10`, а это задание использует поле `7x7` с маркерами `0..48`. Если оставить `10x10`, координаты `map` и `aruco_*` будут неправильными. Поставьте карту `7x7`:
+
+```bash
+scripts/install_aruco_map_7x7.sh
+```
+
+После этого полностью перезапустите Gazebo/Clover.
+
+Быстрая проверка, что карта стала `7x7`:
+
+```bash
+grep -E '^8\s|^33\s|^48\s' ~/catkin_ws/src/clover/aruco_pose/map/cmit.txt
+```
+
+Должны быть координаты:
+
+```text
+8   0.33  1.0  5.0
+33  0.33  5.0  2.0
+48  0.33  6.0  0.0
+```
+
 Скрипт создаёт backup стандартного мира:
 
 ```text
@@ -47,6 +71,7 @@ clover_aruco.world.before_a2025.bak
 
 ```bash
 scripts/restore_world.sh
+scripts/restore_aruco_map.sh
 ```
 
 ## Запуск Симуляции
