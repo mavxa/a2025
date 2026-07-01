@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-WORLD_DIR="$PROJECT_ROOT/Мир"
+WORLD_DIR="$PROJECT_ROOT/world"
 
 find_clover_simulation() {
   if command -v rospack >/dev/null 2>&1; then
@@ -28,7 +28,7 @@ find_clover_simulation() {
 
 if [[ ! -d "$WORLD_DIR/models" || ! -f "$WORLD_DIR/resources/worlds/clover_aruco.world" ]]; then
   echo "Extracted world not found: $WORLD_DIR" >&2
-  echo "Run: unrar x 'Мир.rar'" >&2
+  echo "Expected directory: $PROJECT_ROOT/world" >&2
   exit 1
 fi
 

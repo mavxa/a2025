@@ -43,8 +43,8 @@ class Station:
 
 
 def marker_xy(marker_id: int) -> tuple[float, float]:
-    # В выданном мире маркер 8 имеет координаты (1, 5), маркер 33 - (5, 2).
-    return float(marker_id % 7), float(6 - marker_id // 7)
+    # В текущем Clover image активна стандартная CMIT-карта 10x10.
+    return float(marker_id % 10), float(9 - marker_id // 10)
 
 
 def shifted_xy(x: float, y: float, start_x: float, start_y: float) -> tuple[float, float]:
