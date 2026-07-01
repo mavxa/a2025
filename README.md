@@ -32,7 +32,7 @@ source ~/catkin_ws/devel/setup.bash 2>/dev/null || source ~/catkin_ws/install/se
 scripts/install_world.sh
 ```
 
-Важно: ArUco-карту `cmit.txt` и штатную модель `aruco_cmit_txt` не меняем. В этом образе используется стандартная CMIT-карта `10x10`, и навигацию выполняем в её `map`-frame. Скрипт добавляет только две станции: красная `(1, 5)`, зелёная `(5, 2)`.
+Важно: ArUco-карту `cmit.txt` и штатную модель `aruco_cmit_txt` не меняем. В этом образе используется стандартная CMIT-карта `10x10`, и навигацию выполняем в её `aruco_map`-frame. Скрипт добавляет только две станции: красная на marker `8` `(8, 9)`, зелёная на marker `33` `(3, 6)`.
 
 Скрипт создаёт backup стандартного мира:
 
@@ -70,20 +70,14 @@ rosservice list | grep -E 'navigate|get_telemetry|land|led/set_effect'
 cd ~/zed/a2025
 source /opt/ros/noetic/setup.bash
 source ~/catkin_ws/devel/setup.bash 2>/dev/null || source ~/catkin_ws/install/setup.bash
-python3 scripts/energy_relay_qual.py --frame-id map
-```
-
-Если будет ошибка трансформа `map`, попробуйте:
-
-```bash
-python3 scripts/energy_relay_qual.py --frame-id aruco_map
+python3 scripts/energy_relay_qual.py
 ```
 
 Ожидаемый вывод в терминале:
 
 ```text
 Mission started
-Frame: map
+Frame: aruco_map
 Route: marker 8 -> marker 33 -> land on green
 red
 green
@@ -106,17 +100,9 @@ green_station=green
 
 ## Настройки
 
-Координаты станций взяты из выданного мира:
+Координаты станций соответствуют активной CMIT-карте `10x10`:
 
 ```text
-red marker 8:     x=1.0 y=5.0
-green marker 33:  x=5.0 y=2.0
-```
-
-Если в симуляторе позиции отличаются, их можно переопределить:
-
-```bash
-python3 scripts/energy_relay_qual.py \
-  --red-x 1.0 --red-y 5.0 \
-  --green-x 5.0 --green-y 2.0
+red marker 8:     x=8.0 y=9.0
+green marker 33:  x=3.0 y=6.0
 ```

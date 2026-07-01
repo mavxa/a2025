@@ -125,12 +125,12 @@ block = f"""
     <include>
       <uri>model://red</uri>
       <name>a2025_red_station</name>
-      <pose>1 5 0 0 0 0</pose>
+      <pose>8 9 0 0 0 0</pose>
     </include>
     <include>
       <uri>model://green</uri>
       <name>a2025_green_station</name>
-      <pose>5 2 0 0 0 0</pose>
+      <pose>3 6 0 0 0 0</pose>
     </include>
 {end}
 """
