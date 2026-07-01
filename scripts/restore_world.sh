@@ -50,3 +50,9 @@ for model_name in red green aruco_cmit_txt parquet_plane; do
     esac
   fi
 done
+
+solar_model="$HOME/.gazebo/models/solar_panel"
+if [[ -L "$solar_model" ]]; then
+  rm "$solar_model"
+  echo "Removed old solar_panel symlink: $solar_model"
+fi

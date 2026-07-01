@@ -84,16 +84,41 @@ fi
 
 python3 - "$target_world" <<'PY'
 from pathlib import Path
+import re
 import sys
 
 path = Path(sys.argv[1])
 content = path.read_text(encoding="utf-8")
+
+# Убираем мусор от предыдущих запусков A2025.
 start = "    <!-- A2025 stations start -->"
 end = "    <!-- A2025 stations end -->"
-if start in content and end in content:
+while start in content and end in content:
     before, rest = content.split(start, 1)
     _, after = rest.split(end, 1)
     content = before + after
+
+# Убираем мир прошлого задания Solar Farm, если backup уже был сделан поверх него.
+content = re.sub(
+    r"\s*<!-- Generated solar farm inspection objects\. -->.*?<!-- End generated solar farm inspection objects\. -->\s*",
+    "\n",
+    content,
+    flags=re.S,
+)
+
+# Дополнительная страховка: удаляем отдельные include/model-блоки solar_panel_*.
+content = re.sub(
+    r"\s*<include>\s*(?:(?!</include>).)*?(?:solar_panel|contamination|indicator)(?:(?!</include>).)*?</include>\s*",
+    "\n",
+    content,
+    flags=re.S,
+)
+content = re.sub(
+    r"\s*<model\s+name=\"(?:solar_panel|.*contamination.*|.*indicator.*).*?</model>\s*",
+    "\n",
+    content,
+    flags=re.S,
+)
 
 block = f"""
 {start}
@@ -118,3 +143,9 @@ PY
 
 echo "Installed A2025 stations into existing Clover 10x10 world: $target_world"
 echo "Gazebo models installed into: $HOME/.gazebo/models"
+
+solar_model="$HOME/.gazebo/models/solar_panel"
+if [[ -L "$solar_model" ]]; then
+  rm "$solar_model"
+  echo "Removed old solar_panel symlink: $solar_model"
+fi
